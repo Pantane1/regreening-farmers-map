@@ -35,4 +35,4 @@ Each marker contains:
 
 ## License
 
-{MIT]()
+[MIT](https://github.com/Pantane1/regreening-farmers-map/blob/main/LICENSE)
