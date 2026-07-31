@@ -12,15 +12,7 @@ An interactive GIS web application for visualizing farmer locations participatin
 - Popup with tree species information
 - Responsive interface
 - Statistics dashboard
-
-## Technologies
-
-- HTML5
-- CSS3
-- JavaScript (ES6)
-- Leaflet.js
-- Leaflet Marker Cluster
-
+  
 ## Data
 
 The application visualizes farmer records from:
