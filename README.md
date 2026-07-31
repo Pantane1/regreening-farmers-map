@@ -2,6 +2,8 @@
 
 An interactive GIS web application for visualizing farmer locations participating in the Regreening Program in Kenya.
 
+![](public/rfm-001.png)
+
 ## Features
 
 - Interactive Leaflet map
@@ -29,11 +31,8 @@ Each marker contains:
 - Category
 - Tree species
 - Total trees
-
-## Screenshots
-
-![](public/rfm-001.png)
+![](public/farmer-example.png)
 
 ## License
 
-MIT
+{MIT]()
