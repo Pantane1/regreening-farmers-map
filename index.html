@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Regreening Farmers Map</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css" />
+<style>
+  :root{
+    --ink:#1c2b22;
+    --paper:#f6f4ee;
+    --leaf-deep:#2f5d3a;
+    --leaf:#4f8a5b;
+    --leaf-light:#8fbb8a;
+    --clay:#c97b4a;
+    --gold:#d9a441;
+    --line:#d8d3c4;
+    --panel:#ffffff;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;margin:0;font-family:"Segoe UI",system-ui,-apple-system,sans-serif;background:var(--paper);color:var(--ink);}
+  #app{display:flex;flex-direction:column;height:100%;}
+
+  header{
+    padding:14px 20px;
+    background:var(--leaf-deep);
+    color:#f2efe4;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    flex-wrap:wrap;
+    gap:10px;
+    border-bottom:3px solid var(--gold);
+  }
+  header h1{
+    font-size:1.15rem;
+    margin:0;
+    font-weight:600;
+    letter-spacing:.2px;
+  }
+  header .sub{
+    font-size:.78rem;
+    opacity:.8;
+    margin-top:2px;
+  }
+  #stats{
+    display:flex;
+    gap:16px;
+    font-size:.8rem;
+  }
+  #stats .stat{text-align:center;}
+  #stats .stat b{display:block;font-size:1.15rem;color:var(--gold);}
+
+  #body{flex:1;display:flex;min-height:0;}
+
+  #sidebar{
+    width:260px;
+    min-width:260px;
+    background:var(--panel);
+    border-right:1px solid var(--line);
+    padding:16px;
+    overflow-y:auto;
+  }
+  #sidebar h2{
+    font-size:.72rem;
+    text-transform:uppercase;
+    letter-spacing:.08em;
+    color:#6b6355;
+    margin:18px 0 8px;
+  }
+  #sidebar h2:first-child{margin-top:0;}
+  .chip-row{display:flex;flex-direction:column;gap:6px;}
+  label.chip{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    font-size:.86rem;
+    padding:6px 8px;
+    border-radius:6px;
+    cursor:pointer;
+    border:1px solid transparent;
+  }
+  label.chip:hover{background:#f1efe6;}
+  label.chip input{accent-color:var(--leaf);}
+  .swatch{width:12px;height:12px;border-radius:50%;display:inline-block;flex-shrink:0;border:1px solid rgba(0,0,0,.15);}
+
+  #search{
+    width:100%;
+    padding:8px 10px;
+    border:1px solid var(--line);
+    border-radius:6px;
+    font-size:.85rem;
+    margin-bottom:4px;
+  }
+
+  #map{flex:1;}
+
+  .leaflet-popup-content-wrapper{border-radius:8px;}
+  .popup h3{margin:0 0 4px;font-size:.95rem;color:var(--leaf-deep);}
+  .popup .meta{font-size:.75rem;color:#666;margin-bottom:8px;line-height:1.4;}
+  .popup table{border-collapse:collapse;font-size:.78rem;width:100%;}
+  .popup td{padding:2px 4px;}
+  .popup td.n{text-align:right;font-weight:600;}
+  .popup tr.total td{border-top:1px solid var(--line);font-weight:700;color:var(--leaf-deep);}
+  .cat-badge{
+    display:inline-block;
+    padding:1px 8px;
+    border-radius:10px;
+    font-size:.68rem;
+    font-weight:600;
+    color:#fff;
+    margin-left:6px;
+  }
+
+  #empty-note{
+    font-size:.72rem;
+    color:#8a7f6a;
+    padding:8px;
+    line-height:1.4;
+  }
+
+  @media (max-width:720px){
+    #sidebar{position:absolute;z-index:1000;height:calc(100% - 120px);box-shadow:2px 0 10px rgba(0,0,0,.15);}
+    header{padding:10px 12px;}
+    #stats{font-size:.72rem;gap:10px;}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div>
+      <h1>🌱 Regreening Program — Farmer Map</h1>
+      <div class="sub">Nyamira &amp; Nyandarua Counties, Kenya</div>
+    </div>
+    <div id="stats"></div>
+  </header>
+  <div id="body">
+    <div id="sidebar">
+      <input id="search" type="text" placeholder="Search farmer, ward, location…">
+      <h2>County</h2>
+      <div class="chip-row" id="county-filters"></div>
+      <h2>Farmer category</h2>
+      <div class="chip-row" id="category-filters"></div>
+      <h2>About</h2>
+      <div id="empty-note">
+        Each point is one farmer record from the program's field data. Marker color = county, marker ring = farmer category. Click a point for the full tree species breakdown. Points without GPS coordinates in the source sheet aren't shown (see count above).
+      </div>
+    </div>
+    <div id="map"></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.min.js"></script>
+<script>
+const DATA = {"nyamira": [{"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Ekerenyo", "location": "Bokisaba", "sub_location": "Bukurati 1", "name": "Lukas Obare", "category": "ToT", "phone": 720810740, "lat": -0.521725, "lng": 35.006297, "species": {"Hass avocado": 14, "Pawpaw": 20, "Passion": 4, "Oranges": 2, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 2}, "total_trees": 42}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Ekerenyo", "location": "Bokisaba", "sub_location": "Bukurati 1", "name": "Winfred Peter", "category": "ToT", "phone": 717690128, "lat": -0.523253, "lng": 35.0126, "species": {"Hass avocado": 0, "Pawpaw": 20, "Passion": 0, "Oranges": 0, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 20}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Ekerenyo", "location": "Bokisaba", "sub_location": "Bukurati  1", "name": "Winfred Peter", "category": "ToT", "phone": 717690128, "lat": -0.522592, "lng": 35.012497, "species": {"Hass avocado": 14, "Pawpaw": 0, "Passion": 0, "Oranges": 0, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 14}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Ekerenyo", "location": "Bokisaba", "sub_location": "Bukurati  1", "name": "Jared Nyaribo", "category": "ToT", "phone": 725308737, "lat": -0.52595, "lng": 35.00782, "species": {"Hass avocado": 0, "Pawpaw": 20, "Passion": 0, "Oranges": 0, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 20}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Ekerenyo", "location": "Bokisaba", "sub_location": "Bukurati  1", "name": "Jared Nyaribo", "category": "ToT", "phone": 725308737, "lat": -0.525228, "lng": 35.007687, "species": {"Hass avocado": 14, "Pawpaw": 0, "Passion": 0, "Oranges": 0, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 14}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Ekerenyo", "location": "Bokisaba", "sub_location": "Bukurati  1", "name": "Irene Ayeta", "category": "Replicate", "phone": 714004866, "lat": -0.520355, "lng": 34.994452, "species": {"Hass avocado": 10, "Pawpaw": 0, "Passion": 0, "Oranges": 0, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 10}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Ekerenyo", "location": "Bokisaba", "sub_location": "Bukurati  1", "name": "Irene Ayeta", "category": "Replicate", "phone": 714004866, "lat": -0.52041, "lng": 34.994278, "species": {"Hass avocado": 0, "Pawpaw": 0, "Passion": 4, "Oranges": 0, "White Sapot": 2, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 6}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Ekerenyo", "location": "Bokisaba", "sub_location": "Bukurati  1", "name": "Irene Ayeta", "category": "Replicate", "phone": 714004866, "lat": -0.520623, "lng": 34.994268, "species": {"Hass avocado": 0, "Pawpaw": 8, "Passion": 0, "Oranges": 2, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 2}, "total_trees": 12}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Ekerenyo", "location": "Bokisaba", "sub_location": "Bukurati 1", "name": "Penninah", "category": "Replicate", "phone": 712723789, "lat": "-0.529165", "lng": 34.993757, "species": {"Hass avocado": 0, "Pawpaw": 0, "Passion": 3, "Oranges": 0, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 3}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Bomwagamo", "location": "Bomwagamo", "sub_location": "Nyagwekoa", "name": "Evans Oigo", "category": "TOT", "phone": 722891205, "lat": -0.512047, "lng": 34.935448, "species": {"Hass avocado": 10, "Pawpaw": 12, "Passion": 2, "Oranges": 2, "White Sapot": 0, "Guavas": 2, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 28}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Bomwagamo", "location": "Bomwagamo", "sub_location": "Nyagwekoa", "name": "Grace Nyabete", "category": "TOT", "phone": 725989627, "lat": -0.512873, "lng": 34.948483, "species": {"Hass avocado": 7, "Pawpaw": 7, "Passion": 0, "Oranges": 0, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 14}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Bomwagamo", "location": "Bomwagamo", "sub_location": "Nyagwekoa", "name": "Jane Musa", "category": "Replicate", "phone": 715044410, "lat": -0.51075, "lng": 34.943272, "species": {"Hass avocado": 7, "Pawpaw": 10, "Passion": 0, "Oranges": 1, "White Sapot": 0, "Guavas": 1, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 19}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Bomwagamo", "location": "Bomwagamo", "sub_location": "Nyagwekoa", "name": "Mary Bundi", "category": "Replicate", "phone": 710853897, "lat": -0.517208, "lng": 34.948247, "species": {"Hass avocado": 2, "Pawpaw": 15, "Passion": 3, "Oranges": 1, "White Sapot": 0, "Guavas": 3, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 24}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Bomwagamo", "location": "Bomwagamo", "sub_location": "Nyagwekoa", "name": "Margret Nyamboga", "category": "Replicate", "phone": 723394338, "lat": -0.51429, "lng": 34.953638, "species": {"Hass avocado": 0, "Pawpaw": 6, "Passion": 1, "Oranges": 0, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 7}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Bomwagamo", "location": "Bomwagamo", "sub_location": "Nyagwekoa", "name": "Charles Moturi", "category": "Type 3", "phone": 722392621, "lat": -0.513647, "lng": 34.937465, "species": {"Hass avocado": 3, "Pawpaw": 3, "Passion": 1, "Oranges": 2, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 9}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Bomwagamo", "location": "Bomwagamo", "sub_location": "Nyagwekoa", "name": "Susan Mayeka", "category": "Type 3", "phone": 721769169, "lat": -0.5106, "lng": 34.938017, "species": {"Hass avocado": 10, "Pawpaw": 0, "Passion": 0, "Oranges": 0, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 10}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Bomwagamo", "location": "Bomwagamo", "sub_location": "Nyagwekoa", "name": "Annam Moturi", "category": "Type 3", "phone": 711430240, "lat": null, "lng": null, "species": {"Hass avocado": 6, "Pawpaw": 3, "Passion": 0, "Oranges": 1, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 10}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Bomwagamo", "location": "Bomwagamo", "sub_location": "Nyagwekoa", "name": "Thomas Gesura Hamisi", "category": "Replicate", "phone": null, "lat": null, "lng": null, "species": {"Hass avocado": 1, "Pawpaw": 10, "Passion": 0, "Oranges": 0, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 11}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Bomwagamo", "location": "Bomwagamo", "sub_location": "Nyagwekoa", "name": "James Arika", "category": "Replicate", "phone": null, "lat": null, "lng": null, "species": {"Hass avocado": 0, "Pawpaw": 0, "Passion": 0, "Oranges": 0, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 0}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Bomwagamo", "location": "Bomwagamo", "sub_location": "Nyagwekoa", "name": "Thomas Orango ", "category": "Replicate", "phone": null, "lat": null, "lng": null, "species": {"Hass avocado": 7, "Pawpaw": 8, "Passion": 7, "Oranges": 0, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 22}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Bomwagamo", "location": "Bomwagamo", "sub_location": "Nyambiri", "name": "Rashid Omondi", "category": "TOT", "phone": 712925917, "lat": -0.5009, "lng": 34.936795, "species": {"Hass avocado": 10, "Pawpaw": 5, "Passion": 2, "Oranges": 1, "White Sapot": 0, "Guavas": 1, "Syzygium": 1, "Tree Tomato": 0}, "total_trees": 20}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Bomwagamo", "location": "Bomwagamo", "sub_location": "Nyambiri", "name": "Vibon Nyamboga", "category": "TOT", "phone": 759952448, "lat": -0.496753, "lng": 34.946888, "species": {"Hass avocado": 10, "Pawpaw": 4, "Passion": 2, "Oranges": 1, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 17}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Bomwagamo", "location": "Bomwagamo", "sub_location": "Nyambiri", "name": "James Nyamosi", "category": "Replicate", "phone": 714349607, "lat": -0.500363, "lng": 34.951357, "species": {"Hass avocado": 10, "Pawpaw": 4, "Passion": 0, "Oranges": 1, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 15}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Bomwagamo", "location": "Bomwagamo", "sub_location": "Nyambiri", "name": "Benard Nyamasege", "category": "Replicate", "phone": 706749264, "lat": -0.487517, "lng": 34.944127, "species": {"Hass avocado": 10, "Pawpaw": 4, "Passion": 0, "Oranges": 2, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 16}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Bomwagamo", "location": "Bomwagamo", "sub_location": "Nyambiri", "name": "Alfred O'mongare", "category": "Replicate", "phone": 790250224, "lat": -0.49382, "lng": 34.95982, "species": {"Hass avocado": 15, "Pawpaw": 0, "Passion": 0, "Oranges": 0, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 15}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Bomwagamo", "location": "Bomwagamo", "sub_location": "Nyambiri", "name": "Isaac Gesuge", "category": "Replicate", "phone": 714072132, "lat": null, "lng": null, "species": {"Hass avocado": 10, "Pawpaw": 4, "Passion": 0, "Oranges": 1, "White Sapot": 0, "Guavas": 1, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 16}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Bomwagamo", "location": "Bomwagamo", "sub_location": "Nyambiri", "name": "Jaspher Ombogo Muturi", "category": "Replicate", "phone": 721245548, "lat": null, "lng": null, "species": {"Hass avocado": 10, "Pawpaw": 4, "Passion": 0, "Oranges": 0, "White Sapot": 0, "Guavas": 1, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 15}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Bomwagamo", "location": "Bomwagamo", "sub_location": "Nyambiri", "name": "Thomas Nyambongo Nyairo", "category": "Replicate", "phone": 723355941, "lat": null, "lng": null, "species": {"Hass avocado": 10, "Pawpaw": 4, "Passion": 0, "Oranges": 0, "White Sapot": 0, "Guavas": 1, "Syzygium": 1, "Tree Tomato": 0}, "total_trees": 16}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Bomwagamo", "location": "Bomwagamo", "sub_location": "Nyambiri", "name": "Joseph Ndubi", "category": "Replicate", "phone": 701684233, "lat": null, "lng": null, "species": {"Hass avocado": 10, "Pawpaw": 5, "Passion": 1, "Oranges": 0, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 16}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Bomwagamo", "location": "Bomwagamo", "sub_location": "Nyambiri", "name": "John Nyamoni", "category": "Replicate", "phone": 702507849, "lat": null, "lng": null, "species": {"Hass avocado": 10, "Pawpaw": 5, "Passion": 0, "Oranges": 1, "White Sapot": 0, "Guavas": 1, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 17}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Bomwagamo", "location": "Bomwagamo", "sub_location": "Nyambiri", "name": "Stephen", "category": "Type 3", "phone": null, "lat": null, "lng": null, "species": {"Hass avocado": 10, "Pawpaw": 4, "Passion": 0, "Oranges": 2, "White Sapot": 0, "Guavas": 1, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 17}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Bomwagamo", "location": "Bomwagamo", "sub_location": "Nyambiri", "name": "Daniel Ongoro", "category": "Type 3", "phone": 746904195, "lat": null, "lng": null, "species": {"Hass avocado": 5, "Pawpaw": 4, "Passion": 0, "Oranges": 0, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 2}, "total_trees": 11}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Bomwagamo", "location": "Bomwagamo", "sub_location": "Nyambiri", "name": "Demo (Timothy)", "category": "ToT", "phone": 746904195, "lat": -0.4872, "lng": 34.948995, "species": {"Hass avocado": 10, "Pawpaw": 3, "Passion": 3, "Oranges": 2, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 2}, "total_trees": 20}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Ekerenyo", "location": "Obwari", "sub_location": "Boisangi 1", "name": "Catherine Nyamwita", "category": "TOT", "phone": 722887296, "lat": -0.528682, "lng": 34.969152, "species": {"Hass avocado": 10, "Pawpaw": 50, "Passion": 0, "Oranges": 2, "White Sapot": 2, "Guavas": 0, "Syzygium": 2, "Tree Tomato": 0}, "total_trees": 66}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Ekerenyo", "location": "Obwari", "sub_location": "Boisangi 1", "name": "Charles Asuga", "category": "Replicate", "phone": 706622136, "lat": -0.529165, "lng": 34.968138, "species": {"Hass avocado": 12, "Pawpaw": 17, "Passion": 10, "Oranges": 3, "White Sapot": 4, "Guavas": 5, "Syzygium": 2, "Tree Tomato": 0}, "total_trees": 53}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Ekerenyo", "location": "Obwari", "sub_location": "Boisangi 1", "name": " Ebisiba Matwere", "category": "Replicate", "phone": 728250413, "lat": -0.52934, "lng": 34.96616, "species": {"Hass avocado": 20, "Pawpaw": 20, "Passion": 0, "Oranges": 0, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 40}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Ekerenyo", "location": "Obwari", "sub_location": "Boisangi 1", "name": "Joshua Ondieki", "category": "Replicate", "phone": null, "lat": -0.529577, "lng": 34.966017, "species": {"Hass avocado": 2, "Pawpaw": 3, "Passion": 0, "Oranges": 1, "White Sapot": 1, "Guavas": 1, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 8}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Ekerenyo", "location": "Obwari", "sub_location": "Boisangi 1", "name": "Naomi Ronald", "category": "Type 3", "phone": 797001178, "lat": -0.527238, "lng": 34.965912, "species": {"Hass avocado": 10, "Pawpaw": 10, "Passion": 0, "Oranges": 0, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 20}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Ekerenyo", "location": "Obwari", "sub_location": "Boisangi 1", "name": "Christine Moraa", "category": "Replicate", "phone": 792257085, "lat": -0.527267, "lng": 34.967335, "species": {"Hass avocado": 10, "Pawpaw": 10, "Passion": 0, "Oranges": 1, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 21}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Ekerenyo", "location": "Obwari", "sub_location": "Boisangi 1", "name": "Dina Ongera", "category": "Type 3", "phone": 757356877, "lat": -0.528073, "lng": 34.967172, "species": {"Hass avocado": 10, "Pawpaw": 10, "Passion": 0, "Oranges": 2, "White Sapot": 2, "Guavas": 0, "Syzygium": 2, "Tree Tomato": 0}, "total_trees": 26}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Ekerenyo", "location": "Obwari", "sub_location": "Boisangi 1", "name": "Jackline Ondieki", "category": "Type 3", "phone": 742608109, "lat": -0.528145, "lng": 34.967557, "species": {"Hass avocado": 3, "Pawpaw": 11, "Passion": 0, "Oranges": 0, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 14}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Ekerenyo", "location": "Obwari", "sub_location": "Boisangi 1", "name": "Christine James", "category": "Type 3", "phone": null, "lat": null, "lng": null, "species": {"Hass avocado": 5, "Pawpaw": 5, "Passion": 0, "Oranges": 0, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 10}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Ekerenyo", "location": "Obwari", "sub_location": "Boisangi 1", "name": "Ronald Masiya", "category": "Type 3", "phone": null, "lat": null, "lng": null, "species": {"Hass avocado": 10, "Pawpaw": 10, "Passion": 0, "Oranges": 0, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 20}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Ekerenyo", "location": "Obwari", "sub_location": "Boisangi 1", "name": "Eunice Maluuere", "category": "Type 3", "phone": null, "lat": null, "lng": null, "species": {"Hass avocado": 4, "Pawpaw": 4, "Passion": 0, "Oranges": 0, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 8}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Ekerenyo", "location": "Obwari", "sub_location": "Boisangi 1", "name": "Eric Tome", "category": "Type 3", "phone": null, "lat": null, "lng": null, "species": {"Hass avocado": 4, "Pawpaw": 5, "Passion": 0, "Oranges": 0, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 9}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Ekerenyo", "location": "Obwari", "sub_location": "Boisangi 1", "name": "Samuel Atuti", "category": "Type 3", "phone": null, "lat": null, "lng": null, "species": {"Hass avocado": 4, "Pawpaw": 3, "Passion": 0, "Oranges": 0, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 7}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Ekerenyo", "location": "Obwari", "sub_location": "Boisangi 1", "name": "Vane Kwamboka", "category": "Type 3", "phone": null, "lat": null, "lng": null, "species": {"Hass avocado": 2, "Pawpaw": 0, "Passion": 0, "Oranges": 0, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 2}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Ekerenyo", "location": "Obwari", "sub_location": "Boisangi 1", "name": "Josephine Asuga", "category": null, "phone": null, "lat": null, "lng": null, "species": {"Hass avocado": 5, "Pawpaw": 5, "Passion": 0, "Oranges": 2, "White Sapot": 2, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 14}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Ekerenyo", "location": "Obwari", "sub_location": "Boisangi 1", "name": "Ruth Ongera", "category": null, "phone": null, "lat": null, "lng": null, "species": {"Hass avocado": 10, "Pawpaw": 10, "Passion": 0, "Oranges": 2, "White Sapot": 1, "Guavas": 1, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 24}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Ekerenyo", "location": "Obwari", "sub_location": "Boisangi 1", "name": "Maluuere Asuga", "category": null, "phone": null, "lat": null, "lng": null, "species": {"Hass avocado": 20, "Pawpaw": 20, "Passion": 10, "Oranges": 2, "White Sapot": 2, "Guavas": 0, "Syzygium": 2, "Tree Tomato": 0}, "total_trees": 56}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Ekerenyo", "location": "Obwari", "sub_location": "Boisangi 1", "name": "Christopher Momanyi", "category": null, "phone": null, "lat": null, "lng": null, "species": {"Hass avocado": 10, "Pawpaw": 5, "Passion": 2, "Oranges": 2, "White Sapot": 0, "Guavas": 0, "Syzygium": 2, "Tree Tomato": 0}, "total_trees": 21}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Ekerenyo", "location": "Obwari", "sub_location": "Boisangi 1", "name": "Margaret ", "category": null, "phone": null, "lat": null, "lng": null, "species": {"Hass avocado": 5, "Pawpaw": 20, "Passion": 0, "Oranges": 2, "White Sapot": 0, "Guavas": 0, "Syzygium": 2, "Tree Tomato": 0}, "total_trees": 29}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Ekerenyo", "location": "Obwari", "sub_location": "Boisangi 1", "name": "Joshua Masita", "category": "Type 3", "phone": null, "lat": null, "lng": null, "species": {"Hass avocado": 7, "Pawpaw": 5, "Passion": 0, "Oranges": 0, "White Sapot": 1, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 13}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Ekerenyo", "location": "Obwari", "sub_location": "Boisangi 1", "name": "Karen", "category": "Type 3", "phone": null, "lat": null, "lng": null, "species": {"Hass avocado": 5, "Pawpaw": 4, "Passion": 0, "Oranges": 0, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 9}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Bomwagamo", "location": "bomwagamo", "sub_location": "mageri ", "name": "Francis", "category": "Replicate", "phone": null, "lat": "-0.525668", "lng": 34.950358, "species": {"Hass avocado": 5, "Pawpaw": 5, "Passion": 3, "Oranges": 10, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 23}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Bomwagamo", "location": "Bomwagamo", "sub_location": "Mageri", "name": "Samwel  nyakwari", "category": "Replicate", "phone": null, "lat": "-0.51949", "lng": 34.933513, "species": {"Hass avocado": 19, "Pawpaw": 10, "Passion": 11, "Oranges": 0, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 40}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Bomwagamo", "location": "Bomwagamo", "sub_location": "Mageri ", "name": "Elijah Nyangate", "category": "Replicate ", "phone": null, "lat": "-0.541373", "lng": 34.94362, "species": {"Hass avocado": 8, "Pawpaw": 4, "Passion": 2, "Oranges": 4, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 18}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Bomwagamo", "location": "Bomwagamo", "sub_location": "Mageri ", "name": "Kennedy Mochumbe", "category": "Replicate ", "phone": null, "lat": "-0.543815", "lng": 34.955345, "species": {"Hass avocado": 15, "Pawpaw": 5, "Passion": 3, "Oranges": 8, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 31}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Bomwagamo", "location": "Bomwagamo", "sub_location": "Mageri ", "name": "Philip Ouno", "category": "Replicate ", "phone": null, "lat": "-0.523449", "lng": 34.957567, "species": {"Hass avocado": 8, "Pawpaw": 9, "Passion": 0, "Oranges": 10, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 27}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Bomwagamo", "location": "Bomwagamo", "sub_location": "Mageri", "name": "Grace Kwamboka", "category": "Replicate ", "phone": null, "lat": "-0.52294", "lng": 34.945689, "species": {"Hass avocado": 0, "Pawpaw": 5, "Passion": 0, "Oranges": 0, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 5}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Bokeira", "location": "Bokeira", "sub_location": "Nyamonge", "name": "Alexander Osumo", "category": "Replicate", "phone": 725361932, "lat": "-0.451557", "lng": 34.97897, "species": {"Hass avocado": 35, "Pawpaw": 50, "Passion": 0, "Oranges": 0, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 85}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Bokeira", "location": "Bokeira", "sub_location": "Nyamonge", "name": "Vincent Agweno", "category": "Replicate ", "phone": null, "lat": "-0.447742", "lng": 34.98258, "species": {"Hass avocado": 0, "Pawpaw": 50, "Passion": 0, "Oranges": 0, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 50}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Bokeira", "location": "Bokeira", "sub_location": "Nyamonge", "name": "ZipporahKerubo Nyakango", "category": "Replicate ", "phone": 716602118, "lat": "-0.450828", "lng": 34.981163, "species": {"Hass avocado": 20, "Pawpaw": 0, "Passion": 0, "Oranges": 0, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 20}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Bokeira", "location": "Bokeira", "sub_location": "Nyakenimo", "name": "Danstan Buoma", "category": "Replicate ", "phone": "0726 346603", "lat": "-0.489197", "lng": 34.975272, "species": {"Hass avocado": 17, "Pawpaw": 19, "Passion": 0, "Oranges": 0, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 36}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Bokeira", "location": "Bokeira", "sub_location": "Matongo", "name": "Sophia Nyamanga", "category": "ToT", "phone": 713879636, "lat": "-0.432076", "lng": 35.028243, "species": {"Hass avocado": 8, "Pawpaw": 14, "Passion": 0, "Oranges": 7, "White Sapot": 2, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 31}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Magwagwa", "location": "Borangi ", "sub_location": "Egetonto", "name": "Judy Monari", "category": "ToT", "phone": 722467885, "lat": "-0.48604", "lng": 34.987682, "species": {"Hass avocado": 30, "Pawpaw": 28, "Passion": 6, "Oranges": 4, "White Sapot": 1, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 69}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Bokeira", "location": "Bokeira", "sub_location": "Matongo", "name": "Zachary Momanyi Turungi", "category": "ToT", "phone": 724841947, "lat": "-0.436588", "lng": 35.020807, "species": {"Hass avocado": 34, "Pawpaw": 10, "Passion": 9, "Oranges": 0, "White Sapot": 10, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 63}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Bokeira", "location": "Bokeira", "sub_location": "Gekonge", "name": "Laban Maraga", "category": "Replicate ", "phone": 722434645, "lat": "-0.431603", "lng": 35.004148, "species": {"Hass avocado": 7, "Pawpaw": 3, "Passion": 2, "Oranges": 6, "White Sapot": 2, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 20}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Bokeira", "location": "Borangi", "sub_location": "Gekonge", "name": "Josphine Rioba", "category": "Replicate ", "phone": 720057705, "lat": "-0.471007", "lng": 35.008002, "species": {"Hass avocado": 6, "Pawpaw": 2, "Passion": 0, "Oranges": 0, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 8}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Magwagwa", "location": "Borangi", "sub_location": "Egetonto", "name": "Peter ondieki Obonyo ", "category": "Replicate ", "phone": 713883455, "lat": "-0.467078", "lng": 34.982317, "species": {"Hass avocado": 3, "Pawpaw": 3, "Passion": 1, "Oranges": 0, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 7}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Bokeira", "location": "Bokeira", "sub_location": "Gekonge", "name": "Zablon kamonde nyaberi", "category": "Replicate ", "phone": 716335683, "lat": "-0.455159", "lng": 35.004232, "species": {"Hass avocado": 30, "Pawpaw": 23, "Passion": 5, "Oranges": 3, "White Sapot": 4, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 65}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Bokeira", "location": "Bokeira", "sub_location": "Gekonge", "name": "Moses Mogambi", "category": "Replicate ", "phone": 799103394, "lat": "-0.453244", "lng": 35.009352, "species": {"Hass avocado": 30, "Pawpaw": 5, "Passion": 5, "Oranges": 1, "White Sapot": 1, "Guavas": 1, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 43}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Magwagwa", "location": "Borangi", "sub_location": "Egetonto", "name": "Charles Ndege", "category": "ToT", "phone": 748354979, "lat": -0.474737, "lng": 34.966802, "species": {"Hass avocado": 24, "Pawpaw": 4, "Passion": 1, "Oranges": 3, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 32}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Magwagwa", "location": "Borangi", "sub_location": "Magwagwa", "name": "Tom Sammy Osoro", "category": "ToT", "phone": 710160545, "lat": -0.504842, "lng": 35.03264, "species": {"Hass avocado": 2, "Pawpaw": 44, "Passion": 34, "Oranges": 0, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 80}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Magwagwa", "location": "Borangi", "sub_location": "Magwagwa", "name": "Francis Orina", "category": "Replicate ", "phone": 711698343, "lat": -0.480483, "lng": 35.025605, "species": {"Hass avocado": 0, "Pawpaw": 0, "Passion": 20, "Oranges": 0, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 20}, {"county": "Nyamira", "sub_county": "Nyamira North", "ward": "Magwagwa", "location": "Borangi", "sub_location": "Bonyengwe I", "name": "David Okari Mokua", "category": "Replicate ", "phone": null, "lat": -0.466215, "lng": 35.01531, "species": {"Hass avocado": 0, "Pawpaw": 5, "Passion": 0, "Oranges": 0, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 5}], "nyandarua": [{"county": "Nyandarua", "sub_county": "Ol jororok", "ward": "Gathanji", "location": "Gathanji", "sub_location": "Gathanji", "name": "Peter Kimondo", "category": "ToT", "phone": 722491277, "lat": -0.02782, "lng": 36.328682, "species": {"Hass avocado": 28, "Pawpaw": 0, "Passion": 0, "Oranges": 9, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 14}, "total_trees": 51}, {"county": "Nyandarua", "sub_county": "Ol jororok", "ward": "Gathanji", "location": "Gathanji", "sub_location": "Gathanji", "name": "Risper Mumbi", "category": "Replicate", "phone": 714487465, "lat": -0.027595, "lng": 36.329373, "species": {"Hass avocado": 2, "Pawpaw": 0, "Passion": 0, "Oranges": 5, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 2}, "total_trees": 9}, {"county": "Nyandarua", "sub_county": "Ol jororok", "ward": "Gathanji", "location": "Gathanji", "sub_location": "Gathanji", "name": "Phillis Wangari", "category": "Type 3", "phone": 769843289, "lat": -0.028478, "lng": 36.32839, "species": {"Hass avocado": 0, "Pawpaw": 0, "Passion": 0, "Oranges": 2, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 2}, {"county": "Nyandarua", "sub_county": "Ol jororok", "ward": "Gathanji", "location": "Gathanji", "sub_location": "Gathanji", "name": "Jane Mwihaki", "category": "Replicate", "phone": 792893592, "lat": -0.028713, "lng": 36.328968, "species": {"Hass avocado": 2, "Pawpaw": 0, "Passion": 0, "Oranges": 5, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 7}, {"county": "Nyandarua", "sub_county": "Ol jororok", "ward": "Gathanji", "location": "Gathanji", "sub_location": "Gathanji", "name": "Ann Njeri", "category": "Replicate", "phone": 710662661, "lat": -0.03041, "lng": 36.328695, "species": {"Hass avocado": 2, "Pawpaw": 0, "Passion": 0, "Oranges": 5, "White Sapot": 1, "Guavas": 1, "Syzygium": 0, "Tree Tomato": 2}, "total_trees": 11}, {"county": "Nyandarua", "sub_county": "Ol jororok", "ward": "Gathanji", "location": "Gathanji", "sub_location": "Gathanji", "name": "Ann Njeri", "category": "Replicate", "phone": 707334056, "lat": -0.02965, "lng": 36.327657, "species": {"Hass avocado": 0, "Pawpaw": 0, "Passion": 0, "Oranges": 2, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 2}, "total_trees": 4}, {"county": "Nyandarua", "sub_county": "Ol jororok", "ward": "Gathanji", "location": "Gathanji", "sub_location": "Gathanji", "name": "Mary Muthoni", "category": "Replicate", "phone": 710642380, "lat": -0.029372, "lng": 36.327638, "species": {"Hass avocado": 2, "Pawpaw": 0, "Passion": 0, "Oranges": 5, "White Sapot": 1, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 8}, {"county": "Nyandarua", "sub_county": "Ol jororok", "ward": "Gathanji", "location": "Gathanji", "sub_location": "Gathanji", "name": "Martha Muthoni", "category": "Replicate", "phone": 758993381, "lat": -0.03012, "lng": 36.327532, "species": {"Hass avocado": 2, "Pawpaw": 0, "Passion": 0, "Oranges": 5, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 7}, {"county": "Nyandarua", "sub_county": "Ol jororok", "ward": "Gathanji", "location": "Gathanji", "sub_location": "Gathanji", "name": "Charles Ndegwa", "category": "Replicate", "phone": 769708120, "lat": -0.031242, "lng": 36.327417, "species": {"Hass avocado": 6, "Pawpaw": 0, "Passion": 0, "Oranges": 6, "White Sapot": 1, "Guavas": 2, "Syzygium": 2, "Tree Tomato": 2}, "total_trees": 19}, {"county": "Nyandarua", "sub_county": "Ol jororok", "ward": "Gathanji", "location": "Gathanji", "sub_location": "Gathanji", "name": "Esther Nyambura", "category": "Replicate", "phone": 742622531, "lat": -0.032855, "lng": 36.327933, "species": {"Hass avocado": 2, "Pawpaw": 0, "Passion": 0, "Oranges": 3, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 5}, {"county": "Nyandarua", "sub_county": "Ol jororok", "ward": "Gathanji", "location": "Gathanji", "sub_location": "Gathanji", "name": "Monica Wanjugu", "category": "Replicate", "phone": 742467184, "lat": -0.029007, "lng": 36.324197, "species": {"Hass avocado": 0, "Pawpaw": 0, "Passion": 0, "Oranges": 11, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 11}, {"county": "Nyandarua", "sub_county": "Ol jororok", "ward": "Gathanji", "location": "Gathanji", "sub_location": "Gathanji", "name": "Gerald Gitutha", "category": "Replicate", "phone": 724820323, "lat": -0.03656, "lng": 36.326025, "species": {"Hass avocado": 2, "Pawpaw": 0, "Passion": 0, "Oranges": 15, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 17}, {"county": "Nyandarua", "sub_county": "Ol jororok", "ward": "Gathanji", "location": "Gathanji", "sub_location": "Gathanji", "name": "Julia Muthoni", "category": "Type 3", "phone": "0715534865", "lat": -0.034747, "lng": 36.324982, "species": {"Hass avocado": 0, "Pawpaw": 0, "Passion": 0, "Oranges": 4, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 4}, {"county": "Nyandarua", "sub_county": "Ol jororok", "ward": "Gathanji", "location": "Gathanji", "sub_location": "Gathanji", "name": "Joseph Kimondo", "category": "Replicate", "phone": 726735902, "lat": -0.027857, "lng": 36.329098, "species": {"Hass avocado": 2, "Pawpaw": 0, "Passion": 0, "Oranges": 30, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 32}, {"county": "Nyandarua", "sub_county": "Ol jororok", "ward": "Gathanji", "location": "Gathanji", "sub_location": "Gathanji", "name": "David Ndirangu", "category": "Replicate", "phone": 723340979, "lat": -0.03043, "lng": 36.327738, "species": {"Hass avocado": 7, "Pawpaw": 0, "Passion": 0, "Oranges": 0, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 7}, {"county": "Nyandarua", "sub_county": "Ol jororok", "ward": "Gathanji", "location": "Gathanji", "sub_location": "Gathanji", "name": "Loice Njeri King'ori", "category": "ToT", "phone": 113261047, "lat": -0.03251, "lng": 36.327322, "species": {"Hass avocado": 2, "Pawpaw": 0, "Passion": 0, "Oranges": 5, "White Sapot": 0, "Guavas": 0, "Syzygium": 1, "Tree Tomato": 2}, "total_trees": 10}, {"county": "Nyandarua", "sub_county": "Ol jororok", "ward": "Gathanji", "location": "Gathanji", "sub_location": "Gathanji", "name": "Hannah Kiringa", "category": "Replicate", "phone": 716526400, "lat": -0.032058, "lng": 36.325567, "species": {"Hass avocado": 10, "Pawpaw": 0, "Passion": 0, "Oranges": 0, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 10}, {"county": "Nyandarua", "sub_county": "Ol jororok", "ward": "Gathanji", "location": "Gathanji", "sub_location": "Gathanji", "name": "Patrick Ngujiri", "category": "Replicate", "phone": null, "lat": -0.032633, "lng": 36.32418, "species": {"Hass avocado": 0, "Pawpaw": 0, "Passion": 0, "Oranges": 4, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 4}, {"county": "Nyandarua", "sub_county": "Ol jororok", "ward": "Gathanji", "location": "Gathanji", "sub_location": "Gathanji", "name": "Addison Wanjiku", "category": "Replicate", "phone": 700499030, "lat": -0.035555, "lng": 36.324952, "species": {"Hass avocado": 2, "Pawpaw": 0, "Passion": 0, "Oranges": 15, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 17}, {"county": "Nyandarua", "sub_county": "Ol joro Orok", "ward": "Gatimu", "location": "Gatimu", "sub_location": "Gatimu", "name": "John Kimani", "category": "ToT", "phone": 706841192, "lat": -0.017482, "lng": 36.352578, "species": {"Hass avocado": 80, "Pawpaw": 0, "Passion": 0, "Oranges": 2, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 82}, {"county": "Nyandarua", "sub_county": "Ol joro Orok", "ward": "Gatimu", "location": "Gatimu", "sub_location": "Gatimu", "name": "John Makanga", "category": "ToT", "phone": 793047523, "lat": -0.014792, "lng": 36.349685, "species": {"Hass avocado": 6, "Pawpaw": 0, "Passion": 0, "Oranges": 5, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 2}, "total_trees": 13}, {"county": "Nyandarua", "sub_county": "Ol joro Orok", "ward": "Gatimu", "location": "Gatimu", "sub_location": "Gatimu", "name": "Mary Njoki", "category": "Replicate", "phone": 793893483, "lat": -0.014507, "lng": 36.35188, "species": {"Hass avocado": 6, "Pawpaw": 0, "Passion": 0, "Oranges": 8, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 14}, {"county": "Nyandarua", "sub_county": "Ol joro Orok", "ward": "Gatimu", "location": "Gatimu", "sub_location": "Gatimu", "name": "Esther Wangare", "category": "Replicate", "phone": 712382661, "lat": -0.014725, "lng": 36.351013, "species": {"Hass avocado": 6, "Pawpaw": 0, "Passion": 0, "Oranges": 13, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 19}, {"county": "Nyandarua", "sub_county": "Ol joro Orok", "ward": "Gatimu", "location": "Gatimu", "sub_location": "Gatimu", "name": "Hellen wanjohi", "category": "ToT", "phone": 726100910, "lat": -0.016145, "lng": 36.347348, "species": {"Hass avocado": 6, "Pawpaw": 0, "Passion": 0, "Oranges": 0, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 6}, "total_trees": 12}, {"county": "Nyandarua", "sub_county": "Ol joro Orok", "ward": "Gatimu", "location": "Gatimu", "sub_location": "Gatimu", "name": "Hellen wanjohi", "category": "ToT", "phone": 726100910, "lat": -0.016348, "lng": 36.347357, "species": {"Hass avocado": 0, "Pawpaw": 0, "Passion": 0, "Oranges": 5, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 5}, {"county": "Nyandarua", "sub_county": "Ol joro Orok", "ward": "Gatimu", "location": "Gatimu", "sub_location": "Gatimu", "name": "Juliana Nyawira", "category": "Replicate", "phone": 789329473, "lat": -0.01727, "lng": 36.348213, "species": {"Hass avocado": 6, "Pawpaw": 0, "Passion": 0, "Oranges": 5, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 11}, {"county": "Nyandarua", "sub_county": "Ol joro Orok", "ward": "Gatimu", "location": "Gatimu", "sub_location": "Gatimu", "name": "Patrick wachira", "category": "Replicate", "phone": 726468663, "lat": -0.016113, "lng": 36.348267, "species": {"Hass avocado": 6, "Pawpaw": 0, "Passion": 0, "Oranges": 0, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 6}, {"county": "Nyandarua", "sub_county": "Ol joro Orok", "ward": "Gatimu", "location": "Gatimu", "sub_location": "Gatimu", "name": "John Gathii ", "category": null, "phone": null, "lat": -0.0179, "lng": 36.348027, "species": {"Hass avocado": 0, "Pawpaw": 0, "Passion": 0, "Oranges": 10, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 2}, "total_trees": 12}, {"county": "Nyandarua", "sub_county": "Ol joro Orok", "ward": "Gatimu", "location": "Gatimu", "sub_location": "Gatimu", "name": "David Wambugu", "category": "Replicate", "phone": 727210337, "lat": -0.01794, "lng": 36.34841, "species": {"Hass avocado": 0, "Pawpaw": 0, "Passion": 0, "Oranges": 10, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 10}, {"county": "Nyandarua", "sub_county": "Ol joro Orok", "ward": "Gatimu", "location": "Gatimu", "sub_location": "Gatimu", "name": "Kamau", "category": null, "phone": 727396558, "lat": -0.018455, "lng": 36.34966, "species": {"Hass avocado": 6, "Pawpaw": 0, "Passion": 0, "Oranges": 0, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 6}, {"county": "Nyandarua", "sub_county": "Ol joro Orok", "ward": "Gatimu", "location": "Gatimu", "sub_location": "Gatimu", "name": "Lucy Wanjiru", "category": "Replicate", "phone": 707449712, "lat": -0.019148, "lng": 36.354502, "species": {"Hass avocado": 6, "Pawpaw": 0, "Passion": 0, "Oranges": 1, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 7}, {"county": "Nyandarua", "sub_county": "Ol joro Orok", "ward": "Gatimu", "location": "Gatimu", "sub_location": "Gatimu", "name": "Teresiah Wanjiku", "category": "ToT", "phone": 726817188, "lat": -0.020255, "lng": 36.354313, "species": {"Hass avocado": 6, "Pawpaw": 0, "Passion": 0, "Oranges": 8, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 2}, "total_trees": 16}, {"county": "Nyandarua", "sub_county": "Ol joro Orok", "ward": "Gatimu", "location": "Gatimu", "sub_location": "Gatimu", "name": "Mary Njeri", "category": "Replicate", "phone": 718468484, "lat": -0.01996, "lng": 36.353918, "species": {"Hass avocado": 6, "Pawpaw": 0, "Passion": 0, "Oranges": 0, "White Sapot": 0, "Guavas": 2, "Syzygium": 0, "Tree Tomato": 10}, "total_trees": 18}, {"county": "Nyandarua", "sub_county": "Ol joro Orok", "ward": "Gatimu", "location": "Gatimu", "sub_location": "Gatimu", "name": "Charles Karuiru", "category": "ToT", "phone": 729340142, "lat": -0.020388, "lng": 36.353942, "species": {"Hass avocado": 7, "Pawpaw": 0, "Passion": 0, "Oranges": 4, "White Sapot": 1, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 2}, "total_trees": 14}, {"county": "Nyandarua", "sub_county": "Ol joro Orok", "ward": "Gatimu", "location": "Gatimu", "sub_location": "Gatimu", "name": "Joyce wambui ", "category": "ToT", "phone": 714916626, "lat": -0.020332, "lng": 36.354177, "species": {"Hass avocado": 6, "Pawpaw": 0, "Passion": 0, "Oranges": 10, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 16}, {"county": "Nyandarua", "sub_county": "Ol joro Orok", "ward": "Gatimu", "location": "Gatimu", "sub_location": "Gatimu", "name": "Magret Mwangi", "category": "Replicate", "phone": 728290308, "lat": -0.020017, "lng": 36.354665, "species": {"Hass avocado": 6, "Pawpaw": 0, "Passion": 0, "Oranges": 10, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 16}, {"county": "Nyandarua", "sub_county": "Ol joro Orok", "ward": "Gatimu", "location": "Gatimu", "sub_location": "Gatimu", "name": "Chege", "category": null, "phone": null, "lat": -0.015305, "lng": 36.35093, "species": {"Hass avocado": 14, "Pawpaw": 0, "Passion": 0, "Oranges": 0, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 14}, {"county": "Nyandarua", "sub_county": "Ol joro Orok", "ward": "Gatimu", "location": "Gatimu", "sub_location": "Gatimu", "name": "Peter Mathenge", "category": null, "phone": null, "lat": -0.017387, "lng": 36.35106, "species": {"Hass avocado": 6, "Pawpaw": 0, "Passion": 0, "Oranges": 3, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 9}, {"county": "Nyandarua", "sub_county": "Ol joro Orok", "ward": "Gatimu", "location": "Gatimu", "sub_location": "Gatimu", "name": "Lydia wamuyu", "category": "Replicate", "phone": 700662950, "lat": -0.01747, "lng": 36.350604, "species": {"Hass avocado": 6, "Pawpaw": 0, "Passion": 0, "Oranges": 0, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 6}, {"county": "Nyandarua", "sub_county": "Ol joro Orok", "ward": "Gatimu", "location": "Gatimu", "sub_location": "Gatimu", "name": "Zipporah Muthoni", "category": "Replicate", "phone": 115704791, "lat": -0.017755, "lng": 36.35041, "species": {"Hass avocado": 0, "Pawpaw": 0, "Passion": 0, "Oranges": 5, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 5}, {"county": "Nyandarua", "sub_county": "Ol joro Orok", "ward": "Gatimu", "location": "Gatimu", "sub_location": "Gatimu", "name": "Elizabeth munuhe", "category": "ToT", "phone": 710917578, "lat": -0.018207, "lng": 36.349962, "species": {"Hass avocado": 6, "Pawpaw": 0, "Passion": 0, "Oranges": 7, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 13}, {"county": "Nyandarua", "sub_county": "Ol joro Orok", "ward": "Gatimu", "location": "Gatimu", "sub_location": "Gatimu", "name": "George Githenya", "category": "ToT", "phone": 726431762, "lat": -0.018977, "lng": 36.352202, "species": {"Hass avocado": 3, "Pawpaw": 0, "Passion": 0, "Oranges": 0, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 3}, {"county": "Nyandarua", "sub_county": "Ol Joro Orok", "ward": "Weru", "location": "Weru", "sub_location": "Weru", "name": "Erastus Kabithi", "category": "Replicate", "phone": 712730088, "lat": -0.078408, "lng": 36.358913, "species": {"Hass avocado": 0, "Pawpaw": 0, "Passion": 0, "Oranges": 20, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 20}, {"county": "Nyandarua", "sub_county": "Ol Joro Orok", "ward": "Weru", "location": "Weru", "sub_location": "Weru", "name": "Elizabeth wahu", "category": "Replicate", "phone": 727846755, "lat": -0.077117, "lng": 36.358637, "species": {"Hass avocado": 0, "Pawpaw": 0, "Passion": 0, "Oranges": 20, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 20}, {"county": "Nyandarua", "sub_county": "Ol Joro Orok", "ward": "Weru", "location": "Weru", "sub_location": "Weru", "name": "Jane mumbi", "category": "Replicate", "phone": 796856970, "lat": -0.086167, "lng": 36.354105, "species": {"Hass avocado": 0, "Pawpaw": 0, "Passion": 0, "Oranges": 13, "White Sapot": 5, "Guavas": 0, "Syzygium": 4, "Tree Tomato": 0}, "total_trees": 22}, {"county": "Nyandarua", "sub_county": "Ol Joro Orok", "ward": "Weru", "location": "Weru", "sub_location": "Weru", "name": "Anne muthoni", "category": "Type 3", "phone": 719371652, "lat": -0.077525, "lng": 36.357972, "species": {"Hass avocado": 0, "Pawpaw": 0, "Passion": 0, "Oranges": 50, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 50}, {"county": "Nyandarua", "sub_county": "Ol Joro Orok", "ward": "Weru", "location": "Weru", "sub_location": "Weru", "name": "Caroline wanjiku ", "category": "Type 3", "phone": 758568841, "lat": -0.077853, "lng": 36.359023, "species": {"Hass avocado": 0, "Pawpaw": 0, "Passion": 0, "Oranges": 10, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 10}, {"county": "Nyandarua", "sub_county": "Ol Joro Orok", "ward": "Weru", "location": "Weru", "sub_location": "Weru", "name": "John ndegwa", "category": "Type 3", "phone": 715848649, "lat": -0.078547, "lng": 36.35899, "species": {"Hass avocado": 0, "Pawpaw": 0, "Passion": 0, "Oranges": 20, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 20}, {"county": "Nyandarua", "sub_county": "Ol Joro Orok", "ward": "Weru", "location": "Weru", "sub_location": "Weru", "name": "John ndegwa", "category": "Type 3", "phone": 715848649, "lat": -0.077643, "lng": 36.358897, "species": {"Hass avocado": 0, "Pawpaw": 0, "Passion": 0, "Oranges": 0, "White Sapot": 0, "Guavas": 1, "Syzygium": 1, "Tree Tomato": 0}, "total_trees": 2}, {"county": "Nyandarua", "sub_county": "Ol Joro Orok", "ward": "Weru", "location": "Weru", "sub_location": "Weru", "name": "Mercy Wanjiku", "category": "Replicate", "phone": 714509281, "lat": null, "lng": null, "species": {"Hass avocado": 0, "Pawpaw": 0, "Passion": 0, "Oranges": 15, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 2}, "total_trees": 17}, {"county": "Nyandarua", "sub_county": "Ol Joro Orok", "ward": "Weru", "location": "Weru", "sub_location": "Weru", "name": "Charity Njeri", "category": "Replicate", "phone": 799582124, "lat": null, "lng": null, "species": {"Hass avocado": 0, "Pawpaw": 0, "Passion": 1, "Oranges": 20, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 21}, {"county": "Nyandarua", "sub_county": "Ol Joro Orok", "ward": "Weru", "location": "Weru", "sub_location": "Weru", "name": "Joseph Mwangi", "category": "Replicate", "phone": 731600854, "lat": null, "lng": null, "species": {"Hass avocado": 0, "Pawpaw": 0, "Passion": 0, "Oranges": 2, "White Sapot": 0, "Guavas": 0, "Syzygium": 1, "Tree Tomato": 0}, "total_trees": 3}, {"county": "Nyandarua", "sub_county": "Ol Joro Orok", "ward": "Weru", "location": "Weru", "sub_location": "Weru", "name": "Elizabeth Karanga", "category": "Replicate", "phone": 712528372, "lat": null, "lng": null, "species": {"Hass avocado": 0, "Pawpaw": 0, "Passion": 0, "Oranges": 30, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 30}, {"county": "Nyandarua", "sub_county": "Ol Joro Orok", "ward": "Weru", "location": "Weru", "sub_location": "Weru", "name": "Lydia Wanjiru", "category": "Replicate", "phone": 729813935, "lat": null, "lng": null, "species": {"Hass avocado": 0, "Pawpaw": 0, "Passion": 0, "Oranges": 2, "White Sapot": 0, "Guavas": 0, "Syzygium": 2, "Tree Tomato": 0}, "total_trees": 4}, {"county": "Nyandarua", "sub_county": "Ol Joro Orok", "ward": "Weru", "location": "Weru", "sub_location": "Weru", "name": "Susan Ngina", "category": "Replicate", "phone": 728849922, "lat": null, "lng": null, "species": {"Hass avocado": 0, "Pawpaw": 0, "Passion": 0, "Oranges": 3, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 2}, "total_trees": 5}, {"county": "Nyandarua", "sub_county": "Ol Joro Orok", "ward": "Weru", "location": "Weru", "sub_location": "Weru", "name": "Simon Mungai", "category": "TOT", "phone": 711981842, "lat": null, "lng": null, "species": {"Hass avocado": 0, "Pawpaw": 0, "Passion": 0, "Oranges": 50, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 50}, {"county": "Nyandarua", "sub_county": "Ol Joro Orok", "ward": "Weru", "location": "Weru", "sub_location": "Weru", "name": "Martin Maina", "category": "Replicate", "phone": 729353428, "lat": null, "lng": null, "species": {"Hass avocado": 0, "Pawpaw": 0, "Passion": 0, "Oranges": 20, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 20}, {"county": "Nyandarua", "sub_county": "Ol Joro Orok", "ward": "Weru", "location": "Weru", "sub_location": "Weru", "name": "Stephen Waweru", "category": "Replicate", "phone": 762648707, "lat": null, "lng": null, "species": {"Hass avocado": 0, "Pawpaw": 0, "Passion": 0, "Oranges": 10, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 2}, "total_trees": 12}, {"county": "Nyandarua", "sub_county": "Ol Joro Orok", "ward": "Weru", "location": "Weru", "sub_location": "Weru", "name": "Joshua Kihara", "category": "Replicate", "phone": 715431737, "lat": null, "lng": null, "species": {"Hass avocado": 0, "Pawpaw": 0, "Passion": 0, "Oranges": 20, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 1}, "total_trees": 21}, {"county": "Nyandarua", "sub_county": "Ol Joro Orok", "ward": "Weru", "location": "Weru", "sub_location": "Weru", "name": "Beatrice Nyambura", "category": "Replicate", "phone": 707488422, "lat": null, "lng": null, "species": {"Hass avocado": 0, "Pawpaw": 0, "Passion": 0, "Oranges": 5, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 1}, "total_trees": 6}, {"county": "Nyandarua", "sub_county": "Ol Joro Orok", "ward": "Weru", "location": "Weru", "sub_location": "Weru", "name": "Keziah Wangui", "category": "Replicate", "phone": 723179727, "lat": null, "lng": null, "species": {"Hass avocado": 0, "Pawpaw": 0, "Passion": 0, "Oranges": 25, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 25}, {"county": "Nyandarua", "sub_county": "Ol Joro Orok", "ward": "Weru", "location": "Weru", "sub_location": "Weru", "name": "Martha Wangui", "category": "Replicate", "phone": 719380187, "lat": null, "lng": null, "species": {"Hass avocado": 0, "Pawpaw": 0, "Passion": 0, "Oranges": 10, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 10}, {"county": "Nyandarua", "sub_county": "Ol Joro Orok", "ward": "Weru", "location": "Weru", "sub_location": "Weru", "name": "Charles Thiong'o", "category": "Replicate", "phone": 7245409970, "lat": null, "lng": null, "species": {"Hass avocado": 0, "Pawpaw": 0, "Passion": 0, "Oranges": 0, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 0}, {"county": "Nyandarua", "sub_county": "Ol Joro Orok", "ward": "Weru", "location": "Weru", "sub_location": "Weru", "name": "Joseph Maina", "category": "Replicate", "phone": 710122637, "lat": null, "lng": null, "species": {"Hass avocado": 0, "Pawpaw": 0, "Passion": 0, "Oranges": 15, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 15}, {"county": "Nyandarua", "sub_county": "Ol Joro Orok", "ward": "Weru", "location": "Weru", "sub_location": "Weru", "name": "Peter Macharia", "category": "Replicate", "phone": 729579019, "lat": null, "lng": null, "species": {"Hass avocado": 0, "Pawpaw": 0, "Passion": 0, "Oranges": 10, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 10}, {"county": "Nyandarua", "sub_county": "Ol Joro Orok", "ward": "Weru", "location": "Weru", "sub_location": "Weru", "name": "Augustine Mungai", "category": "Type 3", "phone": 722915139, "lat": null, "lng": null, "species": {"Hass avocado": 0, "Pawpaw": 0, "Passion": 1, "Oranges": 2, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 3}, {"county": "Nyandarua", "sub_county": "Ol Joro Orok", "ward": "Weru", "location": "Weru", "sub_location": "Weru", "name": "Francis Njuguna", "category": "Type 3", "phone": 796411231, "lat": null, "lng": null, "species": {"Hass avocado": 0, "Pawpaw": 0, "Passion": 0, "Oranges": 3, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 3}, {"county": "Nyandarua", "sub_county": "Ol Joro Orok", "ward": "Weru", "location": "Weru", "sub_location": "Weru", "name": "Richard Mwangi", "category": "Type 3", "phone": 713268810, "lat": null, "lng": null, "species": {"Hass avocado": 0, "Pawpaw": 0, "Passion": 0, "Oranges": 5, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 5}, {"county": "Nyandarua", "sub_county": "Ol Joro Orok", "ward": "Weru", "location": "Weru", "sub_location": "Weru", "name": "Peter Njuguna", "category": "Type 3", "phone": 7484226201, "lat": null, "lng": null, "species": {"Hass avocado": 0, "Pawpaw": 0, "Passion": 0, "Oranges": 10, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 10}, {"county": "Nyandarua", "sub_county": "Ol Joro Orok", "ward": "Weru", "location": "Weru", "sub_location": "Weru", "name": "Caren Njeri", "category": "Replicate ", "phone": 715848480, "lat": null, "lng": null, "species": {"Hass avocado": 0, "Pawpaw": 0, "Passion": 0, "Oranges": 0, "White Sapot": 0, "Guavas": 0, "Syzygium": 0, "Tree Tomato": 0}, "total_trees": 0}]};
+
+const SPECIES = ['Hass avocado','Pawpaw','Passion','Oranges','White Sapot','Guavas','Syzygium','Tree Tomato'];
+
+const COUNTY_COLOR = {
+  'Nyamira': '#2f5d3a',
+  'Nyandarua': '#c97b4a'
+};
+
+const CATEGORY_COLOR = {
+  'ToT': '#1f6fb2',
+  'Replicate': '#4f8a5b',
+  'Type 3': '#d9a441',
+  'Unknown': '#8a7f6a'
+};
+
+function normCategory(raw){
+  if(!raw) return 'Unknown';
+  const c = raw.trim().toLowerCase();
+  if(c === 'tot') return 'ToT';
+  if(c === 'replicate') return 'Replicate';
+  if(c.startsWith('type')) return 'Type 3';
+  return 'Unknown';
+}
+
+// Flatten + normalize + coerce lat/lng (some are strings in source)
+let allRecords = [];
+['nyamira','nyandarua'].forEach(key=>{
+  DATA[key].forEach(r=>{
+    const lat = parseFloat(r.lat);
+    const lng = parseFloat(r.lng);
+    if(isNaN(lat) || isNaN(lng)) return; // skip missing coords
+    allRecords.push({
+      ...r,
+      lat, lng,
+      categoryNorm: normCategory(r.category)
+    });
+  });
+});
+
+const totalRaw = DATA.nyamira.length + DATA.nyandarua.length;
+const totalMapped = allRecords.length;
+
+// ---- Stats bar ----
+const totalTrees = allRecords.reduce((s,r)=>s + (r.total_trees||0), 0);
+document.getElementById('stats').innerHTML = `
+  <div class="stat"><b>${totalMapped}</b>farmers mapped</div>
+  <div class="stat"><b>${totalTrees.toLocaleString()}</b>trees planted</div>
+  <div class="stat"><b>${totalRaw - totalMapped}</b>missing GPS</div>
+`;
+
+// ---- Map setup ----
+const map = L.map('map', { zoomControl: true }).setView([-0.3, 35.7], 9);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '&copy; OpenStreetMap contributors',
+  maxZoom: 19
+}).addTo(map);
+
+const clusterGroup = L.markerClusterGroup({ maxClusterRadius: 45 });
+
+function speciesRows(species){
+  return SPECIES.map(sp=>{
+    const v = species[sp] || 0;
+    if(v <= 0) return '';
+    return `<tr><td>${sp}</td><td class="n">${v}</td></tr>`;
+  }).join('');
+}
+
+function popupHtml(r){
+  const catColor = CATEGORY_COLOR[r.categoryNorm];
+  return `
+    <div class="popup">
+      <h3>${r.name || 'Unnamed farmer'} <span class="cat-badge" style="background:${catColor}">${r.categoryNorm}</span></h3>
+      <div class="meta">
+        ${r.county} &rsaquo; ${r.sub_county || ''} &rsaquo; ${r.ward || ''}<br>
+        ${r.location || ''}${r.sub_location ? ', ' + r.sub_location : ''}
+        ${r.phone ? '<br>📞 ' + r.phone : ''}
+      </div>
+      <table>
+        ${speciesRows(r.species)}
+        <tr class="total"><td>Total trees</td><td class="n">${r.total_trees}</td></tr>
+      </table>
+    </div>
+  `;
+}
+
+function makeMarker(r){
+  const color = COUNTY_COLOR[r.county] || '#666';
+  const ringColor = CATEGORY_COLOR[r.categoryNorm];
+  const radius = 5 + Math.min(10, Math.sqrt(r.total_trees || 0));
+  const marker = L.circleMarker([r.lat, r.lng], {
+    radius,
+    fillColor: color,
+    color: ringColor,
+    weight: 2,
+    fillOpacity: 0.85
+  });
+  marker.bindPopup(popupHtml(r));
+  marker._record = r;
+  return marker;
+}
+
+let markers = allRecords.map(makeMarker);
+markers.forEach(m => clusterGroup.addLayer(m));
+map.addLayer(clusterGroup);
+
+if(markers.length){
+  const group = L.featureGroup(markers);
+  map.fitBounds(group.getBounds().pad(0.15));
+}
+
+// ---- Filters ----
+const activeCounties = new Set(Object.keys(COUNTY_COLOR));
+const activeCategories = new Set(Object.keys(CATEGORY_COLOR));
+let searchTerm = '';
+
+function buildFilterUI(){
+  const countyBox = document.getElementById('county-filters');
+  Object.entries(COUNTY_COLOR).forEach(([county,color])=>{
+    const count = allRecords.filter(r=>r.county===county).length;
+    const label = document.createElement('label');
+    label.className = 'chip';
+    label.innerHTML = `<input type="checkbox" checked data-county="${county}">
+      <span class="swatch" style="background:${color}"></span> ${county} <span style="margin-left:auto;color:#999;font-size:.75rem;">${count}</span>`;
+    countyBox.appendChild(label);
+  });
+
+  const catBox = document.getElementById('category-filters');
+  Object.entries(CATEGORY_COLOR).forEach(([cat,color])=>{
+    const count = allRecords.filter(r=>r.categoryNorm===cat).length;
+    if(count === 0) return;
+    const label = document.createElement('label');
+    label.className = 'chip';
+    label.innerHTML = `<input type="checkbox" checked data-category="${cat}">
+      <span class="swatch" style="border-color:${color};border-width:2px;background:#fff"></span> ${cat} <span style="margin-left:auto;color:#999;font-size:.75rem;">${count}</span>`;
+    catBox.appendChild(label);
+  });
+
+  document.querySelectorAll('input[data-county]').forEach(el=>{
+    el.addEventListener('change', ()=>{
+      el.checked ? activeCounties.add(el.dataset.county) : activeCounties.delete(el.dataset.county);
+      applyFilters();
+    });
+  });
+  document.querySelectorAll('input[data-category]').forEach(el=>{
+    el.addEventListener('change', ()=>{
+      el.checked ? activeCategories.add(el.dataset.category) : activeCategories.delete(el.dataset.category);
+      applyFilters();
+    });
+  });
+}
+buildFilterUI();
+
+document.getElementById('search').addEventListener('input', (e)=>{
+  searchTerm = e.target.value.trim().toLowerCase();
+  applyFilters();
+});
+
+function applyFilters(){
+  clusterGroup.clearLayers();
+  const visible = markers.filter(m=>{
+    const r = m._record;
+    if(!activeCounties.has(r.county)) return false;
+    if(!activeCategories.has(r.categoryNorm)) return false;
+    if(searchTerm){
+      const hay = `${r.name||''} ${r.ward||''} ${r.location||''} ${r.sub_location||''} ${r.sub_county||''}`.toLowerCase();
+      if(!hay.includes(searchTerm)) return false;
+    }
+    return true;
+  });
+  visible.forEach(m=>clusterGroup.addLayer(m));
+}
+</script>
+</body>
+</html>
